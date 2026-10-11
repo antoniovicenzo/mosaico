@@ -1,0 +1,19 @@
+services:
+  mosaico:
+    build: .
+    restart: unless-stopped
+    environment:
+      - ANTHROPIC_API_KEY
+      - APIFY_TOKEN
+      - MOSAICO_WEBHOOK_URL
+    volumes:
+      - ./:/srv/mosaico
+    # Optional: serve the dashboard on http://localhost:8080/report.html
+  dashboard:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: python -m http.server 8080 --directory /srv/mosaico/data --bind 0.0.0.0
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/srv/mosaico/data:ro

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mosaico"
+version = "0.1.0"
+description = "Always-on agent that mines 'make money with AI' reels, backtests the ideas, and runs small validated experiments on the best ones."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=1.13",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+video = ["yt-dlp>=2025.1.1"]
+transcribe = ["yt-dlp>=2025.1.1", "faster-whisper>=1.0"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+mosaico = "mosaico.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mosaico*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

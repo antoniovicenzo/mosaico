@@ -1,0 +1,17 @@
+# systemd unit: copy to /etc/systemd/system/, adjust paths/user, then
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mosaico
+[Unit]
+Description=Mosaico money-idea agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=mosaico
+WorkingDirectory=/opt/mosaico
+EnvironmentFile=/opt/mosaico/.env
+ExecStart=/opt/mosaico/.venv/bin/mosaico run
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

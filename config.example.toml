@@ -1,0 +1,66 @@
+# Mosaico configuration. Copy to config.toml (`mosaico init` does it) and edit.
+# Every key is optional; anything missing uses the default shown here.
+# Secrets go in environment variables, not this file:
+#   ANTHROPIC_API_KEY   (required)    https://console.anthropic.com
+#   APIFY_TOKEN         (optional)    https://console.apify.com/account/integrations
+#   MOSAICO_WEBHOOK_URL (optional)    Slack/Discord incoming webhook for digests
+
+data_dir = "data"
+workspace_dir = "workspace"   # generated product files, listings, scripts land here
+
+[profile]
+hours_per_week = 10
+skills = ["writing", "basic design", "spreadsheets"]
+languages = ["English", "Spanish"]
+country = "Spain"
+max_upfront_usd = 0           # you asked for zero-investment ideas
+excluded_topics = []          # e.g. ["crypto", "dropshipping"]
+
+[budget]
+daily_usd = 2.00              # hard cap on Claude API spend per UTC day
+max_call_usd = 0.75
+
+[models]
+extract = "claude-haiku-5-5"  # cheap bulk parsing of reels
+research = "claude-opus-5-5"  # web research + economic model + compliance
+plan = "claude-opus-5-5"
+execute = "claude-opus-5-5"
+research_effort = "high"
+server_fallbacks = true       # set false if you use Bedrock/Vertex/Foundry
+
+[sources]
+hashtags = ["aisidehustle", "makemoneywithai", "chatgptmoney", "aibusiness",
+            "passiveincomeai", "sidehustleideas", "aitools", "digitalproducts"]
+apify_actor = "apify~instagram-hashtag-scraper"
+reels_per_hashtag = 20
+url_inbox = "data/inbox.txt"  # paste reel URLs here, one per line
+cookies_file = ""             # optional browser cookies for yt-dlp (your own session)
+transcribe = true             # needs `pip install 'mosaico[transcribe]'`
+whisper_model = "base"
+min_views = 5000
+max_age_days = 120
+
+[strategy]
+horizon_days = 90
+simulations = 4000
+research_per_day = 4          # each costs roughly $0.20-0.40
+max_active_experiments = 3
+min_score_to_plan = 55
+min_mentions = 1
+
+[strategy.weights]
+ev_per_hour = 0.30
+p_any_revenue = 0.20
+speed = 0.10
+evidence = 0.15
+automation = 0.10
+fit = 0.10
+risk = 0.05
+
+[schedule]
+ingest_every_minutes = 360
+tick_seconds = 60
+digest_hour_utc = 8
+
+[notify]
+webhook_url = ""
