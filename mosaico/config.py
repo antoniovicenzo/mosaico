@@ -17,17 +17,27 @@ class ModelsConfig:
     research: str = "claude-opus-5-5"
     plan: str = "claude-opus-5-5"
     execute: str = "claude-opus-5-5"
-    research_effort: str = "high"
+    research_effort: str = "medium"
     # Server-side refusal fallback (Claude API only). Disable on Bedrock/Vertex/Foundry.
     server_fallbacks: bool = True
 
 
 @dataclass
 class BudgetConfig:
-    # Hard ceiling on Claude API spend per UTC day. The agent idles once it is hit.
-    daily_usd: float = 2.00
-    # Upper bound used to refuse a single call that could blow through the budget.
-    max_call_usd: float = 0.75
+    """Worst case before the agent either pays for itself or switches itself off:
+    discovery_usd + maintenance_monthly_usd = $15. See budget.py for the phases."""
+    # Phase 1: research/backtest as much as possible for this many days, capped at discovery_usd total.
+    discovery_days: int = 7
+    discovery_usd: float = 12.00
+    # Phase 2: no new research; only experiment plans, assets and tracking.
+    maintenance_daily_usd: float = 0.30
+    maintenance_monthly_usd: float = 3.00
+    # Pause all API spend if, this many days into maintenance, logged revenue < total spend. 0 disables.
+    breakeven_days: int = 30
+    # Absolute ceiling for any single UTC day, whatever the phase.
+    daily_usd: float = 3.00
+    # Below this allowance no call is attempted.
+    min_call_usd: float = 0.02
 
 
 @dataclass

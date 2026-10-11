@@ -79,7 +79,7 @@ def run_task(cfg: Config, db: DB, llm: LLM, task) -> Path:
     )
     bundle = llm.structured(
         purpose=f"execute:{task['id']}", role="execute", system=SYSTEM, prompt=prompt, schema=AssetBundle,
-        max_tokens=16000,
+        max_tokens=12000,
     )
     base = task_dir(cfg, task["slug"], task["experiment_id"], task)
     files = write_bundle(base, bundle)

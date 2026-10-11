@@ -117,4 +117,4 @@ def test_example_config_loads():
     from mosaico.config import load_config
 
     cfg = load_config(Path(__file__).resolve().parent.parent / "config.example.toml")
-    assert cfg.budget.daily_usd == 2.0 and cfg.strategy.weights["ev_per_hour"] == 0.30
+    assert cfg.budget.discovery_usd + cfg.budget.maintenance_monthly_usd == 15 and cfg.strategy.weights["ev_per_hour"] == 0.30

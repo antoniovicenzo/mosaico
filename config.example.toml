@@ -17,15 +17,21 @@ max_upfront_usd = 0           # you asked for zero-investment ideas
 excluded_topics = []          # e.g. ["crypto", "dropshipping"]
 
 [budget]
-daily_usd = 2.00              # hard cap on Claude API spend per UTC day
-max_call_usd = 0.75
+# Worst case before it pays for itself or switches itself off: 12 + 3 = $15.
+discovery_days = 7            # phase 1: find, research and backtest ideas
+discovery_usd = 12.00         #   hard cap for the whole phase, paced evenly over the days
+maintenance_daily_usd = 0.30  # phase 2: no new research, only experiment plans/assets/tracking
+maintenance_monthly_usd = 3.00
+breakeven_days = 30           # then auto-pause if logged revenue < API spend (0 = never)
+daily_usd = 3.00              # absolute per-day ceiling in any phase
+min_call_usd = 0.02
 
 [models]
 extract = "claude-haiku-5-5"  # cheap bulk parsing of reels
 research = "claude-opus-5-5"  # web research + economic model + compliance
 plan = "claude-opus-5-5"
 execute = "claude-opus-5-5"
-research_effort = "high"
+research_effort = "medium"
 server_fallbacks = true       # set false if you use Bedrock/Vertex/Foundry
 
 [sources]
@@ -43,7 +49,7 @@ max_age_days = 120
 [strategy]
 horizon_days = 90
 simulations = 4000
-research_per_day = 4          # each costs roughly $0.20-0.40
+research_per_day = 4          # each costs roughly $0.15-0.40
 max_active_experiments = 3
 min_score_to_plan = 55
 min_mentions = 1

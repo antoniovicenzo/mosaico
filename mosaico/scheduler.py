@@ -1,4 +1,4 @@
-"""The always-on loop. Each tick advances every stage a little, within the daily budget."""
+"""The always-on loop. Each tick advances every stage a little, within the current phase's budget."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import signal
 import time
 from datetime import datetime, timezone
 
-from . import executor, extract, ingest, notify, planner, report, research, tracker
+from . import budget, executor, extract, ingest, notify, planner, report, research, tracker
 from .config import Config
 from .db import DB, today
 from .llm import LLM, BudgetExceeded, is_item_error
@@ -45,6 +45,10 @@ class Agent:
 
     def plan(self) -> None:
         if planner.active_count(self.db) >= self.cfg.strategy.max_active_experiments:
+            return
+        # Let the first half of discovery build a ranking before committing experiment slots.
+        s = budget.status(self.cfg, self.db)
+        if s.phase == budget.DISCOVERY and s.day <= self.cfg.budget.discovery_days // 2:
             return
         for opp in planner.candidates(self.cfg, self.db)[:1]:
             try:
@@ -85,23 +89,50 @@ class Agent:
             for exp_id, status in decisions:
                 notify.send(self.cfg, f"Experiment #{exp_id} {status}.")
 
+    def phase_watch(self) -> None:
+        """Announce phase changes and apply the break-even kill switch."""
+        reason = budget.check_breakeven(self.cfg, self.db)
+        phase = budget.status(self.cfg, self.db).phase
+        previous = self.db.get_kv("phase")
+        if phase == previous:
+            return
+        self.db.set_kv("phase", phase)
+        if previous is None:
+            return
+        if phase == budget.MAINTENANCE:
+            msg = ("🔎 Discovery finished. No more new research; from now on only experiment work, "
+                   f"max ${self.cfg.budget.maintenance_monthly_usd:.2f}/month.\n\n" + report.digest_text(self.db, self.cfg))
+        elif phase == budget.PAUSED:
+            msg = f"⏸️ {reason or 'Spending paused.'}"
+        else:
+            msg = f"Phase changed to {phase}."
+        self.db.log("budget", msg.splitlines()[0])
+        notify.send(self.cfg, msg)
+
     def digest_if_due(self) -> None:
         now = datetime.now(timezone.utc)
         if now.hour < self.cfg.schedule.digest_hour_utc or self.db.get_kv("last_digest") == today():
             return
         self.db.set_kv("last_digest", today())
-        notify.send(self.cfg, report.digest_text(self.db))
+        notify.send(self.cfg, report.digest_text(self.db, self.cfg))
 
     # -- loop -------------------------------------------------------------------
-    STAGES = ("ingest_if_due", "evaluate", "extract", "research", "plan", "execute", "digest_if_due")
+    STAGES = ("phase_watch", "ingest_if_due", "evaluate", "extract", "research", "plan", "execute", "digest_if_due")
     LLM_STAGES = {"extract", "research", "plan", "execute"}
+    # New reels are only worth collecting while there is budget to research them.
+    DISCOVERY_ONLY = {"ingest_if_due", "extract", "research"}
 
     def tick(self) -> None:
         budget_hit = False
+        phase = budget.status(self.cfg, self.db).phase
         for name in self.STAGES:
             if self.stopping:
                 return
             if budget_hit and name in self.LLM_STAGES:
+                continue
+            if phase != budget.DISCOVERY and name in self.DISCOVERY_ONLY:
+                continue
+            if phase == budget.PAUSED and name in self.LLM_STAGES:
                 continue
             try:
                 getattr(self, name)()

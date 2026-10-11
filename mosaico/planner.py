@@ -72,7 +72,7 @@ def plan_experiment(cfg: Config, db: DB, llm: LLM, opp_id: int) -> int:
         f"<memo>\n{opp['research_memo'] or ''}\n</memo>"
     )
     plan = llm.structured(
-        purpose=f"plan:{opp_id}", role="plan", system=SYSTEM, prompt=prompt, schema=ExperimentPlan, max_tokens=12000,
+        purpose=f"plan:{opp_id}", role="plan", system=SYSTEM, prompt=prompt, schema=ExperimentPlan, max_tokens=10000,
     )
     return create_experiment(db, opp_id, plan)
 

@@ -9,6 +9,7 @@ from typing import Protocol, TypeVar
 import anthropic
 from pydantic import BaseModel, ValidationError
 
+from . import budget
 from .config import Config
 from .db import DB, now, today
 
@@ -51,6 +52,12 @@ def is_item_error(e: Exception) -> bool:
     and is retried on a later tick once the problem is fixed.
     """
     return isinstance(e, (ItemError, ValidationError, anthropic.BadRequestError))
+
+
+def worst_case_cost(model: str, max_tokens: int, input_tokens: int = 6000, searches: int = 0) -> float:
+    """Upper bound on a call's cost: max_tokens caps all output, including thinking."""
+    inp, out, _ = PRICES.get(model, PRICES["claude-opus-5-5"])
+    return (input_tokens * inp + max_tokens * out) / 1_000_000 + searches * WEB_SEARCH_USD
 
 
 def price_call(model: str, usage) -> float:
@@ -98,12 +105,16 @@ class ClaudeLLM:
         return float(self.db.scalar("SELECT COALESCE(SUM(cost_usd), 0) FROM llm_calls WHERE day = ?", (today(),)))
 
     def remaining_budget(self) -> float:
-        return self.cfg.budget.daily_usd - self.spent_today()
+        return budget.status(self.cfg, self.db).allowance
 
-    def _guard(self, purpose: str) -> None:
-        remaining = self.remaining_budget()
-        if remaining < min(self.cfg.budget.max_call_usd, 0.05) or remaining <= 0:
-            raise BudgetExceeded(f"Daily budget ${self.cfg.budget.daily_usd:.2f} reached; skipping '{purpose}'")
+    def _guard(self, purpose: str, worst_case: float) -> None:
+        """Refuse a call unless even its worst-case cost fits in what the current phase still allows."""
+        s = budget.status(self.cfg, self.db)
+        if s.allowance < max(worst_case, self.cfg.budget.min_call_usd):
+            raise BudgetExceeded(
+                f"Budget ({s.phase}: {s.note}; ${s.allowance:.2f} available now) too low for '{purpose}' "
+                f"(up to ${worst_case:.2f})"
+            )
 
     def _record(self, purpose: str, model: str, usage) -> float:
         cost = price_call(model, usage)
@@ -134,9 +145,9 @@ class ClaudeLLM:
             kw["fallbacks"] = "default"
         return kw
 
-    def _call(self, fn, purpose: str, model: str, effort: str | None, **params):
+    def _call(self, fn, purpose: str, model: str, effort: str | None, worst_case: float, **params):
         """Run a beta messages call, dropping server fallbacks if the platform rejects them."""
-        self._guard(purpose)
+        self._guard(purpose, worst_case)
         kw = self._kwargs(model, effort)
         if "output_config" in params and "output_config" in kw:
             params["output_config"] = {**params["output_config"], **kw.pop("output_config")}
@@ -166,6 +177,7 @@ class ClaudeLLM:
             purpose,
             model,
             effort,
+            worst_case_cost(model, max_tokens, input_tokens=len(system + prompt) // 3 + 500),
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": prompt}],
@@ -194,7 +206,9 @@ class ClaudeLLM:
                 purpose,
                 model,
                 self.cfg.models.research_effort,
-                max_tokens=32000,
+                # Continuations resend earlier search results, so budget generously for input.
+                worst_case_cost(model, 16000, input_tokens=40000, searches=max_searches),
+                max_tokens=16000,
                 system=system,
                 messages=messages,
                 tools=tools,

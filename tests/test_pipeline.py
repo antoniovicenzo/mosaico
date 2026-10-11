@@ -58,6 +58,7 @@ def test_deadline_kills_experiment(cfg, db, llm):
 
 def test_agent_tick_runs_all_stages(cfg, db, llm):
     save_reels(db, sample_reels()[:3])
+    db.set_kv("started_on", (datetime.now(timezone.utc) - timedelta(days=4)).date().isoformat())
     agent = Agent(cfg, db, llm)
     for _ in range(6):
         agent.tick()

@@ -5,13 +5,17 @@ from __future__ import annotations
 import html
 from pathlib import Path
 
+from . import budget
 from .config import Config
 from .db import DB, loads, today
 
 
-def summary(db: DB) -> dict:
+def summary(db: DB, cfg: Config | None = None) -> dict:
     count = lambda sql, *a: db.scalar(sql, a) or 0  # noqa: E731
+    phase = budget.status(cfg or Config(), db)
     return {
+        "phase": phase.phase,
+        "phase_note": phase.note,
         "reels": count("SELECT COUNT(*) FROM reels"),
         "reels_pending": count("SELECT COUNT(*) FROM reels WHERE status = 'new'"),
         "ideas": count("SELECT COUNT(*) FROM ideas"),
@@ -46,8 +50,8 @@ def human_tasks(db: DB) -> list:
     )
 
 
-def digest_text(db: DB) -> str:
-    s = summary(db)
+def digest_text(db: DB, cfg: Config | None = None) -> str:
+    s = summary(db, cfg)
     lines = [
         f"Mosaico daily digest — {today()}",
         f"Reels: {s['reels']} ({s['reels_pending']} pending) · Opportunities: {s['opportunities']} "
@@ -55,6 +59,7 @@ def digest_text(db: DB) -> str:
         f"Experiments running: {s['running']} · Your to-dos: {s['human_todo']}",
         f"Real revenue logged: ${s['revenue_total']:.2f} over {s['hours_total']:.1f} h · "
         f"API spend: ${s['spend_today']:.2f} today, ${s['spend_total']:.2f} total",
+        f"Budget phase: {s['phase']} — {s['phase_note']}",
         "",
         "Top opportunities:",
     ]
@@ -71,9 +76,9 @@ def _money(v) -> str:
     return f"${v:,.0f}" if v is not None else "—"
 
 
-def render_html(db: DB) -> str:
+def render_html(db: DB, cfg: Config | None = None) -> str:
     e = html.escape
-    s = summary(db)
+    s = summary(db, cfg)
     rows = []
     for o in ranked(db):
         sim = loads(o["sim_json"], {})
@@ -130,6 +135,7 @@ def render_html(db: DB) -> str:
         ("Experiments running", f"{s['running']}"),
         ("Revenue logged", f"${s['revenue_total']:,.2f}"),
         ("API spend (total)", f"${s['spend_total']:,.2f}"),
+        ("Budget phase", s["phase"]),
     ]
     tiles = "".join(f'<div class="tile"><div class="v">{v}</div><div class="k">{k}</div></div>' for k, v in stats)
     return f"""<!doctype html>
@@ -173,5 +179,5 @@ a {{ color:var(--accent); }}
 def write_report(cfg: Config, db: DB) -> Path:
     path = cfg.path(cfg.data_dir) / "report.html"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_html(db), encoding="utf-8")
+    path.write_text(render_html(db, cfg), encoding="utf-8")
     return path

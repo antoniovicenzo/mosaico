@@ -67,7 +67,10 @@ def due_for_research(cfg: Config, db: DB) -> list:
 
 
 def research_opportunity(cfg: Config, db: DB, llm: LLM, opp_id: int) -> dict:
-    verdict = compliance.review(cfg, db, llm, opp_id)
+    # Reuse an earlier verdict (e.g. when the budget ran out mid-research yesterday).
+    verdict = compliance.stored_verdict(db.one("SELECT * FROM opportunities WHERE id = ?", (opp_id,)))
+    if verdict is None:
+        verdict = compliance.review(cfg, db, llm, opp_id)
     if verdict.verdict == "reject":
         return {"status": "rejected", "reasons": verdict.reasons}
 

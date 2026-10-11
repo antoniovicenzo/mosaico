@@ -32,10 +32,9 @@ Read this before you run it.
   research what actually happens to beginners (independent sources, marketplace data, policies), turn that
   into an economic model with uncertainty ranges, and simulate thousands of 90-day attempts using *your*
   available hours. Real experiment results then recalibrate the model per category (forward-testing).
-- **Running costs aren't zero.** Ideas need no investment, but the agent pays for Claude API calls.
-  The default cap is **$2/day**, enforced as a hard limit. Rough costs: extracting a reel ≈ $0.001,
-  researching one opportunity ≈ $0.20–0.40 (web searches included), an experiment plan ≈ $0.10, and each
-  generated asset ≈ $0.05–0.30. Apify's free plan covers a few thousand reels a month.
+- **Running costs are capped at about $15 in total.** Ideas need no investment, but the agent pays for Claude
+  API calls. The spending runs in phases automatically (see [Budget phases](#budget-phases)). Before it either
+  pays for itself or switches itself off, it spends at most **$12 + $3 = $15** (≈ €14).
 
 ## What it refuses to do
 
@@ -59,6 +58,7 @@ export APIFY_TOKEN=apify_api_...         # optional, enables automatic Instagram
 mosaico ingest --seed                    # 12 sample reels, so you can try everything immediately
 mosaico run --once                       # one full tick: extract → research → plan → execute
 mosaico run                              # run continuously (Ctrl+C stops it cleanly)
+mosaico budget                           # current phase, what's been spent, what's allowed
 ```
 
 Open `data/report.html` for the dashboard. It shows ranked opportunities with backtest stats,
@@ -99,7 +99,7 @@ Generated assets (product content, listing copy, outreach drafts, scripts) are w
 
 ### Other commands
 
-`mosaico status` · `ls [--all]` · `research [--id N]` · `plan [--id N]` · `execute` · `report` · `spend` ·
+`mosaico status` · `budget` · `resume` · `ls [--all]` · `research [--id N]` · `plan [--id N]` · `execute` · `report` · `spend` ·
 `retry` (requeue parked items) · `rescore` (re-run simulations with the latest calibration)
 
 ## Running it 24/7
@@ -110,11 +110,32 @@ Generated assets (product content, listing copy, outreach drafts, scripts) are w
 - Set `MOSAICO_WEBHOOK_URL` to a Slack or Discord incoming webhook to receive a daily digest, plus a ping
   whenever a new experiment starts or one finishes.
 
-The loop ticks every 60 s. Ingest runs every 6 h, and each tick processes a little of every stage. When
-the daily budget is spent, LLM stages pause until midnight UTC while the free stages keep running.
+The loop ticks every 60 s. During discovery, ingest runs every 6 h, and each tick processes a little of
+every stage. When a day's allowance is used up, the stages that call Claude wait until midnight UTC while
+the free stages keep running. The webhook announces the end of discovery (with the ranking) and any automatic pause.
 A file lock prevents two agents from running on the same data. Items that fail because of their own
 content are parked (`mosaico retry` requeues them). Items that fail because of outages, auth or rate
 limits stay queued and are retried on a later tick.
+
+## Budget phases
+
+All automatic. Check where you are with `mosaico budget`.
+
+| phase | when | what runs | spend limit |
+|---|---|---|---|
+| **discovery** | first 7 days | ingest reels, extract, compliance, web research + backtest, then experiments from day 4 | **$12 total**, paced evenly (~$1.70/day). Ends early if spent |
+| **maintenance** | after discovery | no new reels or research; only experiment plans, asset writing, tracking | $0.30/day, **$3 per 30 days** |
+| **paused** | 30 days into maintenance, if logged revenue < total API spend | nothing that costs money (dashboard and logging still work) | $0 until `mosaico resume` |
+
+Every call is checked against its *worst-case* cost (`max_tokens` bounds the output, thinking included)
+before it is sent, so the caps hold even for the last call of a day. Rough real costs: extracting a reel
+≈ $0.001, researching one idea ≈ $0.15–0.40 including web searches, an experiment plan ≈ $0.10, and an
+asset ≈ $0.05–0.25. One discovery week is enough to backtest roughly 25–40 ideas. All limits are in
+`[budget]` in `config.toml`. For another discovery round later, raise `discovery_usd`/`discovery_days`
+and delete the `discovery_ended_on` row (`sqlite3 data/mosaico.db "DELETE FROM kv WHERE key='discovery_ended_on'"`).
+
+Two extra safety nets are worth setting: a monthly spend limit in the Anthropic Console, and Apify's free
+plan, which simply stops when its monthly credit is used.
 
 ## How scoring works
 

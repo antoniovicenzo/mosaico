@@ -8,7 +8,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import executor, extract, ingest, planner, report, research, tracker
+from . import budget, executor, extract, ingest, planner, report, research, tracker
 from .config import Config, load_config
 from .db import DB, loads, now
 from .sources import save_reels
@@ -40,7 +40,7 @@ def cmd_init(cfg: Config, db: DB, args) -> None:
         if example.exists():
             shutil.copy(example, target)
         else:  # installed as a package without the repo checkout
-            target.write_text('[profile]\nhours_per_week = 10\ncountry = "Spain"\n\n[budget]\ndaily_usd = 2.00\n')
+            target.write_text('[profile]\nhours_per_week = 10\ncountry = "Spain"\n')
         print("Wrote config.toml — edit your profile and budget there.")
     inbox_path = cfg.path(cfg.sources.url_inbox)
     inbox_path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,9 +55,9 @@ def cmd_run(cfg: Config, db: DB, args) -> None:
     agent = Agent(cfg, db, _llm(cfg, db))
     if args.once:
         agent.tick()
-        print(report.digest_text(db))
+        print(report.digest_text(db, cfg))
     else:
-        print(f"Mosaico running (tick every {cfg.schedule.tick_seconds}s, budget ${cfg.budget.daily_usd:.2f}/day). Ctrl+C to stop.")
+        print(f"Mosaico running, tick every {cfg.schedule.tick_seconds}s. {_budget_line(cfg, db)}\nCtrl+C to stop.")
         agent.run_forever()
 
 
@@ -112,7 +112,7 @@ def cmd_execute(cfg: Config, db: DB, args) -> None:
 
 
 def cmd_status(cfg: Config, db: DB, args) -> None:
-    print(report.digest_text(db))
+    print(report.digest_text(db, cfg))
 
 
 def cmd_list(cfg: Config, db: DB, args) -> None:
@@ -180,6 +180,26 @@ def cmd_report(cfg: Config, db: DB, args) -> None:
     print(report.write_report(cfg, db))
 
 
+def _budget_line(cfg: Config, db: DB) -> str:
+    s = budget.status(cfg, db)
+    return f"Phase: {s.phase} ({s.note}). Available now: ${s.allowance:.2f}. Spent so far: ${s.spent_total:.2f}."
+
+
+def cmd_budget(cfg: Config, db: DB, args) -> None:
+    b = cfg.budget
+    print(_budget_line(cfg, db))
+    print(
+        f"Plan: discovery for {b.discovery_days} days (max ${b.discovery_usd:.2f} total), then maintenance "
+        f"(max ${b.maintenance_daily_usd:.2f}/day, ${b.maintenance_monthly_usd:.2f}/month). "
+        + (f"Auto-pause if revenue < spend after {b.breakeven_days} days of maintenance." if b.breakeven_days else "")
+    )
+
+
+def cmd_resume(cfg: Config, db: DB, args) -> None:
+    budget.resume(db)
+    print("Resumed. " + _budget_line(cfg, db))
+
+
 def cmd_spend(cfg: Config, db: DB, args) -> None:
     for r in db.all(
         "SELECT day, COUNT(*) n, SUM(cost_usd) c, SUM(web_searches) s FROM llm_calls GROUP BY day ORDER BY day DESC LIMIT 14"
@@ -237,6 +257,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--note")
     add("report", cmd_report, "Write the HTML dashboard")
     add("spend", cmd_spend, "API spend per day")
+    add("budget", cmd_budget, "Current spending phase and limits")
+    add("resume", cmd_resume, "Lift an automatic break-even pause")
     add("retry", cmd_retry, "Requeue failed items")
     add("rescore", cmd_rescore, "Re-run simulations with current calibration")
     return p
